@@ -27,7 +27,7 @@ import (
 	"testing/quick"
 	"time"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/retargetly/ulid/v2"
 )
 
 func ExampleULID() {
@@ -35,6 +35,21 @@ func ExampleULID() {
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(t.UnixNano())), 0)
 	fmt.Println(ulid.MustNew(ulid.Timestamp(t), entropy))
 	// Output: 0000XSNJG0MQJHBF4QX1EFD6Y3
+}
+
+func TestStringInverse(t *testing.T) {
+	tm := time.Unix(1000000, 0)
+	entropy := ulid.Monotonic(rand.New(rand.NewSource(tm.UnixNano())), 0)
+	u := ulid.MustNew(ulid.Timestamp(tm), entropy)
+
+	s := u.StringInverse()
+
+	expected := "MQJHBF4QX1EFD6Y30000XSNJG0"
+	if s != expected {
+		t.Fatal(fmt.Sprintf("Inverse ULID representation error: \n\texpected: %s \n\tgot: %s", expected, s))
+	}
+
+	ulid.MustParseInverse(s)
 }
 
 func TestNew(t *testing.T) {
