@@ -127,7 +127,16 @@ func MustNew(ms uint64, entropy io.Reader) ULID {
 // ULID's length. Invalid encodings produce undefined ULIDs. For a version that
 // returns an error instead, see ParseStrict.
 func Parse(ulid string) (id ULID, err error) {
-	return id, parse([]byte(ulid), false, &id)
+	return id, parse([]byte(ulid), false, false, &id)
+}
+
+// ParseInverse parses an inverse encoded ULID, returning an error in case of failure.
+//
+// ErrDataSize is returned if the len(ulid) is different from an encoded
+// ULID's length. Invalid encodings produce undefined ULIDs. For a version that
+// returns an error instead, see ParseStrict.
+func ParseInverse(ulid string) (id ULID, err error) {
+	return id, parse([]byte(ulid), false, true, &id)
 }
 
 // ParseStrict parses an encoded ULID, returning an error in case of failure.
@@ -138,13 +147,28 @@ func Parse(ulid string) (id ULID, err error) {
 // ErrDataSize is returned if the len(ulid) is different from an encoded
 // ULID's length. Invalid encodings return ErrInvalidCharacters.
 func ParseStrict(ulid string) (id ULID, err error) {
-	return id, parse([]byte(ulid), true, &id)
+	return id, parse([]byte(ulid), true, false, &id)
 }
 
-func parse(v []byte, strict bool, id *ULID) error {
+// ParseStrictInverse parses an encoded ULID, returning an error in case of failure.
+//
+// It is like Parse, but additionally validates that the parsed ULID consists
+// only of valid base32 characters and it is inversed. It is slightly slower than Parse.
+//
+// ErrDataSize is returned if the len(ulid) is different from an encoded
+// ULID's length. Invalid encodings return ErrInvalidCharacters.
+func ParseStrictInverse(ulid string) (id ULID, err error) {
+	return id, parse([]byte(ulid), true, true, &id)
+}
+
+func parse(v []byte, strict bool, inverse bool, id *ULID) error {
 	// Check if a base32 encoded ULID is the right length.
 	if len(v) != EncodedSize {
 		return ErrDataSize
+	}
+
+	if inverse {
+		v = append(v[RandomSize:], v[:RandomSize]...)
 	}
 
 	// Check if all the characters in a base32 encoded ULID are part of the
@@ -224,10 +248,30 @@ func MustParse(ulid string) ULID {
 	return id
 }
 
+// MustParseInverse is a convenience function equivalent to Parse that panics on failure
+// instead of returning an error.
+func MustParseInverse(ulid string) ULID {
+	id, err := ParseInverse(ulid)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // MustParseStrict is a convenience function equivalent to ParseStrict that
 // panics on failure instead of returning an error.
 func MustParseStrict(ulid string) ULID {
 	id, err := ParseStrict(ulid)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// MustParseStrictInverse is a convenience function equivalent to ParseStrict that
+// panics on failure instead of returning an error.
+func MustParseStrictInverse(ulid string) ULID {
+	id, err := ParseStrictInverse(ulid)
 	if err != nil {
 		panic(err)
 	}
@@ -239,13 +283,32 @@ func (u ULID) Bytes() []byte {
 	return u[:]
 }
 
-// String returns a lexicographically sortable string encoded ULID
+// string returns a lexicographically sortable string encoded ULID
 // (26 characters, non-standard base 32) e.g. 01AN4Z07BY79KA1307SR9X4MV3
 // Format: tttttttttteeeeeeeeeeeeeeee where t is time and e is entropy
-func (id ULID) String() string {
+// Inverse: eeeeeeeeeeeeeeeetttttttttt where t is time and e is entropy
+func (id ULID) string(inverse bool) string {
 	ulid := make([]byte, EncodedSize)
 	_ = id.MarshalTextTo(ulid)
+
+	if inverse {
+		return string(ulid[TimeSize:]) + string(ulid[:TimeSize])
+	}
+
 	return string(ulid)
+}
+
+// String is a function that returns representation of the ULID.
+func (id ULID) String() string {
+	return id.string(false)
+}
+
+// StringInverse is a convenience function equivalent to String that returns inverse representation
+// of the ULID. Example:
+// Original: tttttttttteeeeeeeeeeeeeeee where t is time and e is entropy
+// Inverse: eeeeeeeeeeeeeeeetttttttttt where t is time and e is entropy
+func (id ULID) StringInverse() string {
+	return id.string(true)
 }
 
 // MarshalBinary implements the encoding.BinaryMarshaler interface by
@@ -362,8 +425,11 @@ var dec = [...]byte{
 	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 }
 
+const TimeSize   = 10
+const RandomSize = 16
+
 // EncodedSize is the length of a text encoded ULID.
-const EncodedSize = 26
+const EncodedSize = TimeSize + RandomSize
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface by
 // parsing the data as string encoded ULID.
@@ -371,7 +437,16 @@ const EncodedSize = 26
 // ErrDataSize is returned if the len(v) is different from an encoded
 // ULID's length. Invalid encodings produce undefined ULIDs.
 func (id *ULID) UnmarshalText(v []byte) error {
-	return parse(v, false, id)
+	return parse(v, false, false, id)
+}
+
+// UnmarshalInverseText implements the encoding.TextUnmarshaler interface by
+// parsing the data as string encoded inverse ULID.
+//
+// ErrDataSize is returned if the len(v) is different from an encoded
+// ULID's length. Invalid encodings produce undefined ULIDs.
+func (id *ULID) UnmarshalInverseText(v []byte) error {
+	return parse(v, false, true, id)
 }
 
 // Time returns the Unix time in milliseconds encoded in the ULID.
